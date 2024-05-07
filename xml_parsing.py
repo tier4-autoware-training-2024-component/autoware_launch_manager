@@ -46,30 +46,25 @@ def process_include_tag(
         included_file, context, local_context, base_namespace
     )
     included_file = find_linked_path(included_file)
-
+    temp_context = deepcopy(context)
     argument_dict = dict()
-    # temp_context = dict()
     for child in include_tag:
         if child.tag == "arg":
             value = analyze_string(
-                child.get("value"), context, local_context, base_namespace
+                child.get("value"), temp_context, local_context, base_namespace
             )
             name = analyze_string(
-                os.path.join(group_base_namespace, child.get("name")),
-                context,
+                child.get("name"),
+                temp_context,
                 local_context,
                 base_namespace,
             )
-            if name == "config_file":
-                print("we get config_file", child.get("value"))
-            print(name, value)
-            argument_dict[name] = value
-    temp_context = deepcopy(context)
-    temp_context.update(argument_dict)
+            temp_context[name] = value  # temp_context is used to pass arguments to the included file and updated on the fly for each argument
+    for key in argument_dict:
+        temp_context[key] = argument_dict[key]
     if included_file:
         print(f"Reading included file: {included_file}")
         if included_file.endswith(".launch.xml"):
-            print(temp_context)
             return parse_xml(included_file, group_base_namespace, temp_context)
     return context
 
@@ -77,14 +72,10 @@ def process_include_tag(
 def parse_argument_tag(
     argument_tag: ET.Element, base_namespace: str, context: dict, local_context: dict
 ):
-    argument_name = os.path.join(base_namespace, argument_tag.get("name"))
+    # argument_name = os.path.join(base_namespace, argument_tag.get("name"))
+    argument_name = argument_tag.get("name")
     if argument_tag.get("default"):
         if argument_name not in context:
-            if argument_name == "launch_driver":
-                print(
-                    "-------------------------we get launch_driver",
-                    argument_tag.get("default"),
-                )
             context[argument_name] = analyze_string(
                 argument_tag.get("default"), context, local_context, base_namespace
             )

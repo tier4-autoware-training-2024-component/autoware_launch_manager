@@ -10,10 +10,26 @@ patterns = {
 }
 
 
+def analyze_eval_string(input_string):
+    list_of_strings = input_string.split(' ')
+    if list_of_strings[0] == '$(eval':
+        expression = ' '.join(list_of_strings[1:])[:-1] # remove the last ')'
+        expression = clean_eval_variables(expression)
+        result = str(eval(expression)) # remove the outer quotes
+    else:
+        result = input_string
+    return result
+
+
 def clean_eval_variables(string):
     """Remove quotes and spaces from a string, to obtain the 'value' of a variable."""
-    return string.replace('"', "").replace("'", "").strip()
-
+    string = string.replace("\\", "")
+    if string.startswith('"') and string.endswith('"'):
+        return string[1:-1]
+    elif string.startswith("'") and string.endswith("'"):
+        return string[1:-1]
+    else:
+        return string
 
 def analyze_string(
     input_string: str, context: dict, local_context: dict, base_namespace: str
@@ -39,7 +55,7 @@ def analyze_string(
             var_value = local_context.get(variable_name, None)
             if var_value is None:
                 ## Check if the variable is in the global context
-                var_value = context.get(os.path.join(base_namespace, variable_name))
+                var_value = context.get(variable_name)
             return var_value
         elif match.group(1) == "env":
             var_name = analyze_string(
@@ -53,35 +69,16 @@ def analyze_string(
             )
             return os.getenv(var_name, default_value)
         elif match.group(1) == "eval":
+            ### UNUSED_CODE: This code is not used in the current implementation, we will call analyze_eval_string instead 
             expression = analyze_string(
                 match.group(2), context, local_context, base_namespace
             )
             ## Deal with different types of expressions, currently only support ones actually used in the launch files
             ## TODO: Refactor and suport more types of expressions
-            variables = expression.split("==")
-            if len(variables) == 2:
-                return str(
-                    clean_eval_variables(variables[0])
-                    == clean_eval_variables(variables[1])
-                )
-            variables = expression.split(">=")
-            if len(variables) == 2:
-                return str(
-                    clean_eval_variables(variables[0])
-                    >= clean_eval_variables(variables[1])
-                )
-            variables = expression.split("<")
-            if len(variables) == 2:
-                return str(
-                    clean_eval_variables(variables[0])
-                    < clean_eval_variables(variables[1])
-                )
-            variables = expression.split("+")
-            if len(variables) == 2:
-                return str(
-                    clean_eval_variables(variables[0])
-                    + clean_eval_variables(variables[1])
-                )
+            expression = clean_eval_variables(expression)
+            eval_result = str(eval(eval(expression))) # remove the outer quotes
+            print(expression, eval_result)
+            return eval_result
 
         elif match.group(1) == "find-pkg-share":
             package_name = analyze_string(
@@ -100,12 +97,17 @@ def analyze_string(
         3. Solve all eval expressions.
         4. Solve all find-pkg-share expressions.
         """
-        while True:
-            old_string = input_string
-            input_string = re.sub(pattern, replace_match, input_string)
-            # Stop if no more changes are made
-            if input_string == old_string:
-                break
+        if key == "eval":
+            input_string = analyze_eval_string(input_string)
+        else:    
+            while True:
+                old_string = input_string
+                input_string = re.sub(pattern, replace_match, input_string)
+                # Stop if no more changes are made
+                if input_string == old_string:
+                    break
+    # solve for "\" in the string
+    input_string = input_string.replace("\\", "")
 
     return input_string
 
