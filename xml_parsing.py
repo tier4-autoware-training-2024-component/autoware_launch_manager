@@ -1,10 +1,14 @@
+#!/bin/python3
+
 import xml.etree.ElementTree as ET
 from copy import deepcopy
+import json
 import os
 from string_utils import analyze_string, find_linked_path
-from tree_utils import LaunchTree
-from launch_node_utils import parse_node_tag
-from typing import List, Optional
+from roslaunch_analyze_server.launch_tree import LaunchTree
+from roslaunch_analyze_server.launch_node_utils import parse_node_tag
+from roslaunch_analyze_server.models import LaunchFile
+from typing import Any, Dict, List, Optional
 
 
 def check_if_run(tag: ET.Element, base_name: dict, context: dict, local_context: dict):
@@ -22,6 +26,13 @@ def check_if_run(tag: ET.Element, base_name: dict, context: dict, local_context:
         if unless_value:
             return False
     return True
+
+
+def copy_context(context: dict):
+    new_context = dict()
+    for key in context:
+        new_context[key] = context[key]
+    return new_context
 
 
 def process_include_tag(
@@ -46,7 +57,7 @@ def process_include_tag(
         included_file, context, local_context, base_namespace
     )
     included_file = find_linked_path(included_file)
-    temp_context = deepcopy(context)
+    temp_context = copy_context(context)
     argument_dict = dict()
     for child in include_tag:
         if child.tag == "arg":
@@ -59,11 +70,17 @@ def process_include_tag(
                 local_context,
                 base_namespace,
             )
-            temp_context[name] = value  # temp_context is used to pass arguments to the included file and updated on the fly for each argument
+            temp_context[name] = (
+                value  # temp_context is used to pass arguments to the included file and updated on the fly for each argument
+            )
     for key in argument_dict:
         temp_context[key] = argument_dict[key]
     if included_file:
-        print(f"Reading included file: {included_file}")
+        context["__tree__"].add_child(
+            context["__current_launch_name_"],
+            os.path.basename(included_file),
+            path=included_file,
+        )
         if included_file.endswith(".launch.xml"):
             return parse_xml(included_file, group_base_namespace, temp_context)
     return context
@@ -76,9 +93,13 @@ def parse_argument_tag(
     argument_name = argument_tag.get("name")
     if argument_tag.get("default"):
         if argument_name not in context:
-            context[argument_name] = analyze_string(
+            value = analyze_string(
                 argument_tag.get("default"), context, local_context, base_namespace
             )
+            context["__tree__"].get_node(context["__current_launch_name_"]).parameters[
+                argument_name
+            ] = value
+            context[argument_name] = value
     return context
 
 
@@ -111,7 +132,7 @@ def parse_group_tag(
             group_base_namespace = (
                 f"{base_namespace}/{child.get('namespace').strip('/')}"
             )
-            print(f"Setting ROS namespace to {group_base_namespace} inside group")
+            # print(f"Setting ROS namespace to {group_base_namespace} inside group")
 
     ## find all other children
     for child in group_tag:
@@ -123,8 +144,8 @@ def parse_group_tag(
             group_base_namespace=group_base_namespace,
         )
 
-    if group_base_namespace != base_namespace:
-        print(f"Exiting group with namespace {group_base_namespace}")
+    # if group_base_namespace != base_namespace:
+    #     print(f"Exiting group with namespace {group_base_namespace}")
     return context
 
 
@@ -158,6 +179,10 @@ def process_tag(
 def parse_xml(file_path: str, namespace: str = "", context: dict = {}):
     """Recursively parse XML files, handling <include> tags. For each file, the namespace should be the same"""
     full_path = os.path.join(file_path)
+    context["__current_launch_file__"] = full_path
+    context["__current_launch_name_"] = os.path.basename(full_path)
+    if context["__tree__"].root is None:
+        context["__tree__"].add_root(context["__current_launch_name_"], path=full_path)
     tree = ET.parse(full_path)
     root = tree.getroot()
 
@@ -168,15 +193,28 @@ def parse_xml(file_path: str, namespace: str = "", context: dict = {}):
     return context
 
 
-if __name__ == "__main__":
+def main(
+    launch_file="/home/ukenryu/autoware/src/launcher/autoware_launch/autoware_launch/launch/logging_simulator.launch.xml",
+    vehicle_model="sample_vehicle",
+    sensor_model="sample_sensor_kit",
+    **kwargs,
+):
     # Start parsing from the main XML file
-    main_file = "/home/ukenryu/autoware/src/launcher/autoware_launch/autoware_launch/launch/logging_simulator.launch.xml"  # Update this path to your main XML file
     context_tree = LaunchTree()
     context = dict()
     context["__tree__"] = context_tree
 
     ## arguments
-    context["vehicle_model"] = "sample_vehicle"
-    context["sensor_model"] = "sample_sensor_kit"
-    context = parse_xml(main_file, context=context)
-    print(context)
+    context["vehicle_model"] = vehicle_model
+    context["sensor_model"] = sensor_model
+    for key in kwargs:
+        context[key] = kwargs[key]
+    context = parse_xml(launch_file, context=context)
+    # print(context["__tree__"])
+    json.dump(context["__tree__"].jsonify(), open("tree.json", "w"), indent=4)
+    return context["__tree__"].jsonify()
+
+
+if __name__ == "__main__":
+    from fire import Fire
+    context = Fire(main)

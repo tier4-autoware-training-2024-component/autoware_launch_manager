@@ -10,18 +10,7 @@ patterns = {
 }
 
 
-def analyze_eval_string(input_string):
-    list_of_strings = input_string.split(' ')
-    if list_of_strings[0] == '$(eval':
-        expression = ' '.join(list_of_strings[1:])[:-1] # remove the last ')'
-        expression = clean_eval_variables(expression)
-        result = str(eval(expression)) # remove the outer quotes
-    else:
-        result = input_string
-    return result
-
-
-def clean_eval_variables(string):
+def clean_eval_variables(string: str) -> str:
     """Remove quotes and spaces from a string, to obtain the 'value' of a variable."""
     string = string.replace("\\", "")
     if string.startswith('"') and string.endswith('"'):
@@ -31,9 +20,22 @@ def clean_eval_variables(string):
     else:
         return string
 
+
+def analyze_eval_string(input_string: str) -> str:
+    """Evaluate the expression in the $(eval ...) tag."""
+    list_of_strings = input_string.split(" ")
+    if list_of_strings[0] == "$(eval":
+        expression = " ".join(list_of_strings[1:])[:-1]  # remove the last ')'
+        expression = clean_eval_variables(expression)
+        result = str(eval(expression))  # remove the outer quotes
+    else:
+        result = input_string
+    return result
+
+
 def analyze_string(
     input_string: str, context: dict, local_context: dict, base_namespace: str
-):
+) -> str:
     """Resolve substitutions recursively in a given string.
 
     Args:
@@ -68,17 +70,6 @@ def analyze_string(
                 base_namespace,
             )
             return os.getenv(var_name, default_value)
-        elif match.group(1) == "eval":
-            ### UNUSED_CODE: This code is not used in the current implementation, we will call analyze_eval_string instead 
-            expression = analyze_string(
-                match.group(2), context, local_context, base_namespace
-            )
-            ## Deal with different types of expressions, currently only support ones actually used in the launch files
-            ## TODO: Refactor and suport more types of expressions
-            expression = clean_eval_variables(expression)
-            eval_result = str(eval(eval(expression))) # remove the outer quotes
-            print(expression, eval_result)
-            return eval_result
 
         elif match.group(1) == "find-pkg-share":
             package_name = analyze_string(
@@ -99,7 +90,7 @@ def analyze_string(
         """
         if key == "eval":
             input_string = analyze_eval_string(input_string)
-        else:    
+        else:
             while True:
                 old_string = input_string
                 input_string = re.sub(pattern, replace_match, input_string)
@@ -112,7 +103,8 @@ def analyze_string(
     return input_string
 
 
-def find_linked_path(path):
+def find_linked_path(path: str) -> str:
+    """Find the linked path of a given path. If the path is not a link, return the path itself."""
     if os.path.islink(path):
         linked_path = os.readlink(path)
         return linked_path
